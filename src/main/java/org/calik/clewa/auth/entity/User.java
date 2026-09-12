@@ -64,6 +64,10 @@ public class User {
 
 	private Instant verificationCodeExpiresAt;
 
+	@JsonIgnore
+	@Column(nullable = false)
+	private int verificationAttempts = 0;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
 	private AccountStatus status = AccountStatus.ACTIVE;

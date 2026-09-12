@@ -54,6 +54,9 @@ class SignupServiceTest {
 		assertThat(saved.getPasswordHash()).isEqualTo("hashed-password");
 		assertThat(saved.getFirstName()).isEqualTo("Ahmet");
 		assertThat(saved.getLastName()).isEqualTo("Yılmaz");
+		assertThat(saved.isPhoneVerified()).isFalse();
+		assertThat(saved.getVerificationCode()).matches("\\d{6}");
+		assertThat(saved.getVerificationCodeExpiresAt()).isAfter(java.time.Instant.now());
 	}
 
 	@Test

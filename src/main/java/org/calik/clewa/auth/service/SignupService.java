@@ -1,8 +1,13 @@
 package org.calik.clewa.auth.service;
 
+import java.security.SecureRandom;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.Period;
+import java.time.temporal.ChronoUnit;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,7 +25,11 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class SignupService {
 
+	private static final Logger logger = LoggerFactory.getLogger(SignupService.class);
+
 	private static final int MINIMUM_AGE = 18;
+	private static final long VERIFICATION_CODE_VALIDITY_MINUTES = 5;
+	private static final SecureRandom RANDOM = new SecureRandom();
 
 	private final UserRepository userRepository;
 	private final PasswordEncoder passwordEncoder;
@@ -43,8 +52,17 @@ public class SignupService {
 		user.setFirstName(request.firstName());
 		user.setLastName(request.lastName());
 		user.setDateOfBirth(request.dateOfBirth());
+		String verificationCode = generateVerificationCode();
+		user.setVerificationCode(verificationCode);
+		user.setVerificationCodeExpiresAt(Instant.now().plus(VERIFICATION_CODE_VALIDITY_MINUTES, ChronoUnit.MINUTES));
+
+		logger.info("[Simüle SMS] {} numarasına doğrulama kodu: {}", normalizedPhoneNumber, verificationCode);
 
 		return userRepository.save(user);
+	}
+
+	private String generateVerificationCode() {
+		return String.format("%06d", RANDOM.nextInt(1_000_000));
 	}
 
 }
