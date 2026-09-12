@@ -1,4 +1,4 @@
-package org.calik.clewa.common;
+package org.calik.clewa.common.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

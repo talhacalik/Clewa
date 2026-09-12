@@ -1,4 +1,4 @@
-package org.calik.clewa.common;
+package org.calik.clewa.common.exception;
 
 public abstract class ClewaException extends RuntimeException {
 

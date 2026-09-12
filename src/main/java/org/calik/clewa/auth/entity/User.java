@@ -1,4 +1,4 @@
-package org.calik.clewa.auth;
+package org.calik.clewa.auth.entity;
 
 import java.time.Instant;
 import java.time.LocalDate;

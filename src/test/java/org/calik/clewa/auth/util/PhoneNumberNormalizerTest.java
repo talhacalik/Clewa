@@ -1,4 +1,4 @@
-package org.calik.clewa.auth;
+package org.calik.clewa.auth.util;
 
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;

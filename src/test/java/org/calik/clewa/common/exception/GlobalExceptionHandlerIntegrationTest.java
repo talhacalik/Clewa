@@ -1,4 +1,4 @@
-package org.calik.clewa.common;
+package org.calik.clewa.common.exception;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

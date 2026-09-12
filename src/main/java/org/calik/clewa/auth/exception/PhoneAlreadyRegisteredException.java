@@ -1,6 +1,6 @@
 package org.calik.clewa.auth.exception;
 
-import org.calik.clewa.common.ClewaException;
+import org.calik.clewa.common.exception.ClewaException;
 
 public class PhoneAlreadyRegisteredException extends ClewaException {
 

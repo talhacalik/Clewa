@@ -1,4 +1,4 @@
-package org.calik.clewa.common;
+package org.calik.clewa.common.response;
 
 import java.time.Instant;
 

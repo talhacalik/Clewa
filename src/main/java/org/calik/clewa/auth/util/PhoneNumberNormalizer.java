@@ -1,4 +1,4 @@
-package org.calik.clewa.auth;
+package org.calik.clewa.auth.util;
 
 import org.calik.clewa.auth.exception.InvalidPhoneNumberException;
 

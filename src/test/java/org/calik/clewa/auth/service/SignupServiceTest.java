@@ -1,4 +1,4 @@
-package org.calik.clewa.auth;
+package org.calik.clewa.auth.service;
 
 import java.time.LocalDate;
 import java.util.Optional;
@@ -11,9 +11,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import org.calik.clewa.auth.dto.SignupRequest;
+import org.calik.clewa.auth.entity.User;
 import org.calik.clewa.auth.exception.InvalidPhoneNumberException;
 import org.calik.clewa.auth.exception.PhoneAlreadyRegisteredException;
 import org.calik.clewa.auth.exception.UnderageException;
+import org.calik.clewa.auth.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;

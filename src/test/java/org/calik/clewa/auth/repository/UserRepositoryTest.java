@@ -1,4 +1,4 @@
-package org.calik.clewa.auth;
+package org.calik.clewa.auth.repository;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -7,7 +7,9 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import;
 
 import org.calik.clewa.AbstractIntegrationTest;
-import org.calik.clewa.common.JpaAuditingConfig;
+import org.calik.clewa.auth.entity.AccountStatus;
+import org.calik.clewa.auth.entity.User;
+import org.calik.clewa.common.config.JpaAuditingConfig;
 
 import java.time.LocalDate;
 

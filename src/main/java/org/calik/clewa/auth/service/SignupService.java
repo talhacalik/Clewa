@@ -1,4 +1,4 @@
-package org.calik.clewa.auth;
+package org.calik.clewa.auth.service;
 
 import java.time.LocalDate;
 import java.time.Period;
@@ -8,8 +8,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import org.calik.clewa.auth.dto.SignupRequest;
+import org.calik.clewa.auth.entity.User;
 import org.calik.clewa.auth.exception.PhoneAlreadyRegisteredException;
 import org.calik.clewa.auth.exception.UnderageException;
+import org.calik.clewa.auth.repository.UserRepository;
+import org.calik.clewa.auth.util.PhoneNumberNormalizer;
 
 import lombok.RequiredArgsConstructor;
 

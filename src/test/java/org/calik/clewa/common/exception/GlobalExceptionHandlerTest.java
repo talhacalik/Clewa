@@ -1,8 +1,10 @@
-package org.calik.clewa.common;
+package org.calik.clewa.common.exception;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+
+import org.calik.clewa.common.response.ApiResponse;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
