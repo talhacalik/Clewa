@@ -65,7 +65,7 @@ public class User {
 	private Instant verificationCodeExpiresAt;
 
 	@JsonIgnore
-	@Column(nullable = false)
+	@Column(nullable = false, columnDefinition = "integer default 0")
 	private int verificationAttempts = 0;
 
 	@Enumerated(EnumType.STRING)
