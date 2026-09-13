@@ -31,8 +31,12 @@ class WalletRepositoryTest extends AbstractIntegrationTest {
 	private UserRepository userRepository;
 
 	private User persistedUser() {
+		return persistedUser("+905321234567");
+	}
+
+	private User persistedUser(String phoneNumber) {
 		User user = new User();
-		user.setPhoneNumber("+905321234567");
+		user.setPhoneNumber(phoneNumber);
 		user.setPasswordHash("hashed-password");
 		user.setFirstName("Ahmet");
 		user.setLastName("Yılmaz");
@@ -43,7 +47,7 @@ class WalletRepositoryTest extends AbstractIntegrationTest {
 	@Test
 	void findByUserId_shouldReturnSavedWalletWithDefaults() {
 		User user = persistedUser();
-		Wallet wallet = new Wallet(user);
+		Wallet wallet = new Wallet(user, "1234567890");
 
 		walletRepository.save(wallet);
 
@@ -66,7 +70,7 @@ class WalletRepositoryTest extends AbstractIntegrationTest {
 	@Test
 	void findByUserPhoneNumber_shouldReturnSavedWallet() {
 		User user = persistedUser();
-		walletRepository.save(new Wallet(user));
+		walletRepository.save(new Wallet(user, "1234567890"));
 
 		var found = walletRepository.findByUser_PhoneNumber("+905321234567");
 
@@ -77,20 +81,49 @@ class WalletRepositoryTest extends AbstractIntegrationTest {
 	@Test
 	void save_whenSecondWalletForSameUser_violatesUniqueConstraint() {
 		User user = persistedUser();
-		walletRepository.saveAndFlush(new Wallet(user));
+		walletRepository.saveAndFlush(new Wallet(user, "1111111111"));
 
-		assertThatThrownBy(() -> walletRepository.saveAndFlush(new Wallet(user)))
+		assertThatThrownBy(() -> walletRepository.saveAndFlush(new Wallet(user, "2222222222")))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	@Test
 	void save_whenBalanceIsNegative_violatesCheckConstraint() {
 		User user = persistedUser();
-		Wallet wallet = new Wallet(user);
+		Wallet wallet = new Wallet(user, "1234567890");
 		wallet.setBalance(new BigDecimal("-10.00"));
 
 		assertThatThrownBy(() -> walletRepository.saveAndFlush(wallet))
 			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void save_whenSecondWalletWithSameAccountNumber_violatesUniqueConstraint() {
+		User firstUser = persistedUser("+905321234567");
+		User secondUser = persistedUser("+905339876543");
+
+		walletRepository.saveAndFlush(new Wallet(firstUser, "1234567890"));
+
+		assertThatThrownBy(() -> walletRepository.saveAndFlush(new Wallet(secondUser, "1234567890")))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void save_whenAccountNumberFormatInvalid_violatesCheckConstraint() {
+		User user = persistedUser();
+		Wallet wallet = new Wallet(user, "abc");
+
+		assertThatThrownBy(() -> walletRepository.saveAndFlush(wallet))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void existsByAccountNumber_reflectsWhetherAccountNumberIsTaken() {
+		User user = persistedUser();
+		walletRepository.save(new Wallet(user, "1234567890"));
+
+		assertThat(walletRepository.existsByAccountNumber("1234567890")).isTrue();
+		assertThat(walletRepository.existsByAccountNumber("0000000000")).isFalse();
 	}
 
 }

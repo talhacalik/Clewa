@@ -11,6 +11,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import org.calik.clewa.auth.entity.User;
+import org.calik.clewa.wallet.util.AccountNumberGenerator;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -31,7 +32,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "wallets", uniqueConstraints = @UniqueConstraint(name = "uk_wallets_user_id", columnNames = "user_id"))
+@Table(name = "wallets", uniqueConstraints = {
+		@UniqueConstraint(name = "uk_wallets_user_id", columnNames = "user_id"),
+		@UniqueConstraint(name = "uk_wallets_account_number", columnNames = "account_number") })
 @EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
@@ -48,6 +51,16 @@ public class Wallet {
 			foreignKey = @ForeignKey(name = "fk_wallets_user_id"))
 	@Setter(AccessLevel.NONE)
 	private User user;
+
+	// Sunucu tarafında üretilir (bkz. AccountNumberGenerator), kullanıcıdan asla doğrudan alınmaz.
+	// Yine de phoneNumber'daki gibi bir CHECK kısıtı ekliyoruz: bu, kötü niyetli girdiye karşı değil,
+	// AccountNumberGenerator'da ileride çıkabilecek bir hataya (ya da generator'ı bypass eden bir
+	// migration/admin aracına) karşı ikinci bir savunma katmanı (defense in depth) — bkz. CLAUDE.md §3.10.
+	@Check(name = "chk_wallets_account_number_format", constraints = "account_number ~ '^[0-9]{10}$'")
+	@Column(name = "account_number", nullable = false, updatable = false,
+			length = AccountNumberGenerator.ACCOUNT_NUMBER_LENGTH)
+	@Setter(AccessLevel.NONE)
+	private String accountNumber;
 
 	@Check(name = "chk_wallets_balance_non_negative", constraints = "balance >= 0")
 	@Column(nullable = false, columnDefinition = "numeric(19,2) default 0.00")
@@ -67,8 +80,9 @@ public class Wallet {
 	@Column(nullable = false)
 	private Instant updatedAt;
 
-	public Wallet(User user) {
+	public Wallet(User user, String accountNumber) {
 		this.user = user;
+		this.accountNumber = accountNumber;
 	}
 
 	// Para tutarları her zaman kuruş hassasiyetinde (2 ondalık basamak) tutulur — bkz. CLAUDE.md §3.5.

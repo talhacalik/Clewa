@@ -38,14 +38,15 @@ class WalletControllerTest {
 	void getWallet_withAuthenticatedUser_returnsBalance() throws Exception {
 		User user = new User();
 		user.setPhoneNumber("+905321234567");
-		Wallet wallet = new Wallet(user);
+		Wallet wallet = new Wallet(user, "1234567890");
 		wallet.setBalance(new BigDecimal("0.00"));
 		when(walletService.getWalletForCurrentUser("+905321234567")).thenReturn(wallet);
 
 		mockMvc.perform(get("/api/wallet"))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.data.balance").value(0.00));
+			.andExpect(jsonPath("$.data.balance").value(0.00))
+			.andExpect(jsonPath("$.data.accountNumber").value("1234567890"));
 	}
 
 	@Test
