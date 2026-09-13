@@ -11,6 +11,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import org.calik.clewa.auth.entity.User;
+import org.calik.clewa.wallet.exception.InsufficientBalanceException;
 import org.calik.clewa.wallet.util.AccountNumberGenerator;
 
 import jakarta.persistence.Column;
@@ -87,10 +88,34 @@ public class Wallet {
 
 	// Para tutarları her zaman kuruş hassasiyetinde (2 ondalık basamak) tutulur — bkz. CLAUDE.md §3.5.
 	// Bu setter, servis katmanında hesaplanan bir bakiyenin ölçeği kontrolsüz kalırsa bile burada
-	// normalize edilmesini garanti eder.
+	// normalize edilmesini garanti eder. İş mantığı (transfer, ödeme) bu setter'ı doğrudan
+	// çağırmak yerine credit()/debit() kullanmalı — bunlar public kalıyor çünkü
+	// WalletRepositoryTest'teki bazı testler DB CHECK kısıtlarını izole doğrulamak için
+	// bilerek geçersiz bir bakiyeyi buradan set ediyor (bkz. CLAUDE.md §7.3 Faz 2 notu).
 	public void setBalance(BigDecimal balance) {
 		Objects.requireNonNull(balance, "balance null olamaz");
 		this.balance = balance.setScale(2, RoundingMode.HALF_EVEN);
+	}
+
+	public void credit(BigDecimal amount) {
+		validatePositiveAmount(amount);
+		setBalance(this.balance.add(amount));
+	}
+
+	public void debit(BigDecimal amount) {
+		validatePositiveAmount(amount);
+		BigDecimal newBalance = this.balance.subtract(amount);
+		if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+			throw new InsufficientBalanceException("Yetersiz bakiye.");
+		}
+		setBalance(newBalance);
+	}
+
+	private void validatePositiveAmount(BigDecimal amount) {
+		Objects.requireNonNull(amount, "amount null olamaz");
+		if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+			throw new IllegalArgumentException("Tutar sıfırdan büyük olmalı.");
+		}
 	}
 
 }
