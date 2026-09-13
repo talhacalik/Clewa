@@ -1,10 +1,12 @@
 package org.calik.clewa.auth.service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -16,6 +18,8 @@ import org.calik.clewa.auth.exception.InvalidPhoneNumberException;
 import org.calik.clewa.auth.exception.PhoneAlreadyRegisteredException;
 import org.calik.clewa.auth.exception.UnderageException;
 import org.calik.clewa.auth.repository.UserRepository;
+import org.calik.clewa.wallet.entity.Wallet;
+import org.calik.clewa.wallet.repository.WalletRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -30,6 +34,9 @@ class SignupServiceTest {
 
 	@Mock
 	private UserRepository userRepository;
+
+	@Mock
+	private WalletRepository walletRepository;
 
 	@Mock
 	private PasswordEncoder passwordEncoder;
@@ -60,6 +67,22 @@ class SignupServiceTest {
 	}
 
 	@Test
+	void signup_withValidRequest_alsoCreatesWalletWithZeroBalance() {
+		SignupRequest request = validRequest();
+		when(userRepository.findByPhoneNumber("+905321234567")).thenReturn(Optional.empty());
+		when(passwordEncoder.encode("Password1")).thenReturn("hashed-password");
+		when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		User saved = signupService.signup(request);
+
+		ArgumentCaptor<Wallet> walletCaptor = ArgumentCaptor.forClass(Wallet.class);
+		verify(walletRepository).save(walletCaptor.capture());
+		Wallet savedWallet = walletCaptor.getValue();
+		assertThat(savedWallet.getUser()).isEqualTo(saved);
+		assertThat(savedWallet.getBalance()).isEqualByComparingTo(new BigDecimal("0.00"));
+	}
+
+	@Test
 	void signup_whenUnderage_throwsAndDoesNotSave() {
 		SignupRequest request = new SignupRequest("5321234567", "Password1", "Ahmet", "Yılmaz", LocalDate.now().minusYears(17));
 
@@ -67,6 +90,7 @@ class SignupServiceTest {
 			.isInstanceOf(UnderageException.class);
 
 		verify(userRepository, never()).save(any());
+		verify(walletRepository, never()).save(any());
 	}
 
 	@Test
@@ -78,6 +102,7 @@ class SignupServiceTest {
 			.isInstanceOf(PhoneAlreadyRegisteredException.class);
 
 		verify(userRepository, never()).save(any());
+		verify(walletRepository, never()).save(any());
 	}
 
 	@Test

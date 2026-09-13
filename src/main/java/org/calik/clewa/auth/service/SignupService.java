@@ -18,6 +18,8 @@ import org.calik.clewa.auth.exception.PhoneAlreadyRegisteredException;
 import org.calik.clewa.auth.exception.UnderageException;
 import org.calik.clewa.auth.repository.UserRepository;
 import org.calik.clewa.auth.util.PhoneNumberNormalizer;
+import org.calik.clewa.wallet.entity.Wallet;
+import org.calik.clewa.wallet.repository.WalletRepository;
 
 import lombok.RequiredArgsConstructor;
 
@@ -32,6 +34,7 @@ public class SignupService {
 	private static final SecureRandom RANDOM = new SecureRandom();
 
 	private final UserRepository userRepository;
+	private final WalletRepository walletRepository;
 	private final PasswordEncoder passwordEncoder;
 
 	@Transactional
@@ -58,7 +61,10 @@ public class SignupService {
 
 		logger.info("[Simüle SMS] {} numarasına doğrulama kodu: {}", normalizedPhoneNumber, verificationCode);
 
-		return userRepository.save(user);
+		User savedUser = userRepository.save(user);
+		walletRepository.save(new Wallet(savedUser));
+
+		return savedUser;
 	}
 
 	private String generateVerificationCode() {
