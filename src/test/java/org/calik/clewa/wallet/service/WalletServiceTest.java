@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.calik.clewa.auth.entity.User;
 import org.calik.clewa.wallet.entity.Wallet;
+import org.calik.clewa.wallet.exception.WalletNotFoundException;
 import org.calik.clewa.wallet.repository.WalletRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,7 +46,7 @@ class WalletServiceTest {
 		when(walletRepository.findByUser_PhoneNumber("+905321234567")).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> walletService.getWalletForCurrentUser("+905321234567"))
-			.isInstanceOf(IllegalStateException.class);
+			.isInstanceOf(WalletNotFoundException.class);
 	}
 
 }

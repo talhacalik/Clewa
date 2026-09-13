@@ -10,6 +10,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import org.calik.clewa.common.response.ApiResponse;
 
+// Bu sınıf sadece beklenmeyen/genel hataları (Exception.class) yakalar; domain'e özel
+// *ExceptionHandler sınıfları (AuthExceptionHandler, WalletExceptionHandler, ...) @Order(HIGHEST_PRECEDENCE)
+// ile işaretli, bu yüzden Spring onları her zaman burasından önce dener. Bu sınıf kasıtlı olarak
+// sırasız bırakılıyor — varsayılan sıra (LOWEST_PRECEDENCE) zaten "en son denenen" anlamına geliyor.
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 

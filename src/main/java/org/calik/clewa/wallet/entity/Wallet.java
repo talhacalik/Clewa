@@ -50,7 +50,7 @@ public class Wallet {
 	private User user;
 
 	@Check(name = "chk_wallets_balance_non_negative", constraints = "balance >= 0")
-	@Column(nullable = false, precision = 19, scale = 2, columnDefinition = "numeric(19,2) default 0.00")
+	@Column(nullable = false, columnDefinition = "numeric(19,2) default 0.00")
 	@Setter(AccessLevel.NONE)
 	private BigDecimal balance = new BigDecimal("0.00");
 

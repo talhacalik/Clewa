@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.calik.clewa.auth.entity.User;
 import org.calik.clewa.common.config.SecurityConfig;
 import org.calik.clewa.wallet.entity.Wallet;
+import org.calik.clewa.wallet.exception.WalletNotFoundException;
 import org.calik.clewa.wallet.service.WalletService;
 
 import static org.mockito.Mockito.when;
@@ -51,6 +52,18 @@ class WalletControllerTest {
 	void getWallet_withoutAuthentication_isRejected() throws Exception {
 		mockMvc.perform(get("/api/wallet"))
 			.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	@WithMockUser(username = "+905321234567")
+	void getWallet_whenWalletNotFound_returnsNotFound() throws Exception {
+		when(walletService.getWalletForCurrentUser("+905321234567"))
+			.thenThrow(new WalletNotFoundException("Oturumdaki kullanıcının cüzdanı bulunamadı."));
+
+		mockMvc.perform(get("/api/wallet"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.error.code").value("WALLET_NOT_FOUND"));
 	}
 
 }
