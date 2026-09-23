@@ -62,26 +62,40 @@ class TransferRepositoryTest extends AbstractIntegrationTest {
 	}
 
 	@Test
-	void findByIdempotencyKey_shouldReturnSavedTransfer() {
+	void findBySenderWalletAndIdempotencyKey_shouldReturnSavedTransfer() {
 		Wallet sender = persistedWallet("+905321234567", "1111111111");
 		Wallet receiver = persistedWallet("+905339876543", "2222222222");
 		transferRepository.save(new Transfer(sender, receiver, new BigDecimal("25.00"), "idem-key-2"));
 
-		var found = transferRepository.findByIdempotencyKey("idem-key-2");
+		var found = transferRepository.findBySenderWalletAndIdempotencyKey(sender, "idem-key-2");
 
 		assertThat(found).isPresent();
 		assertThat(found.get().getAmount()).isEqualByComparingTo(new BigDecimal("25.00"));
 	}
 
 	@Test
-	void findByIdempotencyKey_whenNotFound_returnsEmpty() {
-		var found = transferRepository.findByIdempotencyKey("does-not-exist");
+	void findBySenderWalletAndIdempotencyKey_whenNotFound_returnsEmpty() {
+		Wallet sender = persistedWallet("+905321234567", "1111111111");
+
+		var found = transferRepository.findBySenderWalletAndIdempotencyKey(sender, "does-not-exist");
 
 		assertThat(found).isEmpty();
 	}
 
 	@Test
-	void save_whenIdempotencyKeyDuplicate_violatesUniqueConstraint() {
+	void findBySenderWalletAndIdempotencyKey_whenSameKeyUsedByDifferentSender_returnsEmpty() {
+		Wallet firstSender = persistedWallet("+905321234567", "1111111111");
+		Wallet secondSender = persistedWallet("+905339876543", "2222222222");
+		Wallet receiver = persistedWallet("+905351112233", "3333333333");
+		transferRepository.save(new Transfer(firstSender, receiver, new BigDecimal("25.00"), "shared-key"));
+
+		var found = transferRepository.findBySenderWalletAndIdempotencyKey(secondSender, "shared-key");
+
+		assertThat(found).isEmpty();
+	}
+
+	@Test
+	void save_whenIdempotencyKeyDuplicateForSameSender_violatesUniqueConstraint() {
 		Wallet sender = persistedWallet("+905321234567", "1111111111");
 		Wallet receiver = persistedWallet("+905339876543", "2222222222");
 		transferRepository.saveAndFlush(new Transfer(sender, receiver, new BigDecimal("10.00"), "duplicate-key"));
@@ -89,6 +103,19 @@ class TransferRepositoryTest extends AbstractIntegrationTest {
 		assertThatThrownBy(() -> transferRepository
 			.saveAndFlush(new Transfer(sender, receiver, new BigDecimal("20.00"), "duplicate-key")))
 			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	void save_whenIdempotencyKeySharedByDifferentSenders_isAllowed() {
+		Wallet firstSender = persistedWallet("+905321234567", "1111111111");
+		Wallet secondSender = persistedWallet("+905339876543", "2222222222");
+		Wallet receiver = persistedWallet("+905351112233", "3333333333");
+		transferRepository.saveAndFlush(new Transfer(firstSender, receiver, new BigDecimal("10.00"), "shared-key"));
+
+		Transfer secondTransfer = transferRepository
+			.saveAndFlush(new Transfer(secondSender, receiver, new BigDecimal("20.00"), "shared-key"));
+
+		assertThat(secondTransfer.getId()).isNotNull();
 	}
 
 	@Test

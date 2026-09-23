@@ -126,4 +126,22 @@ class WalletRepositoryTest extends AbstractIntegrationTest {
 		assertThat(walletRepository.existsByAccountNumber("0000000000")).isFalse();
 	}
 
+	@Test
+	void findByAccountNumber_shouldReturnSavedWallet() {
+		User user = persistedUser();
+		walletRepository.save(new Wallet(user, "1234567890"));
+
+		var found = walletRepository.findByAccountNumber("1234567890");
+
+		assertThat(found).isPresent();
+		assertThat(found.get().getUser().getId()).isEqualTo(user.getId());
+	}
+
+	@Test
+	void findByAccountNumber_whenNoWalletExists_returnsEmpty() {
+		var found = walletRepository.findByAccountNumber("0000000000");
+
+		assertThat(found).isEmpty();
+	}
+
 }

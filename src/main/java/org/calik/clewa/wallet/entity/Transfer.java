@@ -34,7 +34,13 @@ import lombok.NoArgsConstructor;
 // rollback olur, satır hiç yazılmaz. Yani var olan her Transfer, tanımı gereği zaten tamamlanmıştır.
 @Entity
 @Table(name = "transfers",
-		uniqueConstraints = @UniqueConstraint(name = "uk_transfers_idempotency_key", columnNames = "idempotency_key"),
+		// Tekillik BİLİNÇLİ OLARAK sadece idempotency_key üzerinde DEĞİL, (sender_wallet_id,
+		// idempotency_key) ikilisi üzerinde kuruluyor: aksi halde iki farklı kullanıcı aynı key
+		// değerini kullanırsa (zayıf/deterministik client key üretimi), biri diğerinin transfer
+		// kaydını (tutar, alıcı, tarih) hiçbir yetki kontrolünden geçmeden görebilirdi
+		// (security-reviewer, Faz 4 incelemesi — CRITICAL).
+		uniqueConstraints = @UniqueConstraint(name = "uk_transfers_sender_wallet_idempotency_key",
+				columnNames = { "sender_wallet_id", "idempotency_key" }),
 		indexes = {
 				@Index(name = "idx_transfers_sender_wallet_id", columnList = "sender_wallet_id"),
 				@Index(name = "idx_transfers_receiver_wallet_id", columnList = "receiver_wallet_id") })

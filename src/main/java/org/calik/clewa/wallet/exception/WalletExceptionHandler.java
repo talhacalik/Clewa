@@ -17,10 +17,25 @@ import org.calik.clewa.common.response.ApiResponse;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class WalletExceptionHandler {
 
-	@ExceptionHandler(WalletNotFoundException.class)
+	@ExceptionHandler({ WalletNotFoundException.class, RecipientNotFoundException.class })
 	public ResponseEntity<ApiResponse<Void>> handleNotFound(ClewaException exception) {
+		return buildResponse(exception, HttpStatus.NOT_FOUND);
+	}
+
+	@ExceptionHandler({ InsufficientBalanceException.class, SelfTransferException.class,
+			InvalidTransferRequestException.class })
+	public ResponseEntity<ApiResponse<Void>> handleBadRequest(ClewaException exception) {
+		return buildResponse(exception, HttpStatus.BAD_REQUEST);
+	}
+
+	@ExceptionHandler(TransferConflictException.class)
+	public ResponseEntity<ApiResponse<Void>> handleConflict(ClewaException exception) {
+		return buildResponse(exception, HttpStatus.CONFLICT);
+	}
+
+	private ResponseEntity<ApiResponse<Void>> buildResponse(ClewaException exception, HttpStatus status) {
 		ApiResponse<Void> body = ApiResponse.error(exception.getErrorCode(), exception.getMessage());
-		return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+		return ResponseEntity.status(status).body(body);
 	}
 
 }
