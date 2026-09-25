@@ -12,7 +12,6 @@ import org.calik.clewa.auth.entity.AccountStatus;
 import org.calik.clewa.auth.exception.AccountNotActiveException;
 import org.calik.clewa.wallet.entity.Transfer;
 import org.calik.clewa.wallet.entity.Wallet;
-import org.calik.clewa.wallet.exception.InvalidTransferRequestException;
 import org.calik.clewa.wallet.exception.RecipientNotFoundException;
 import org.calik.clewa.wallet.exception.SelfTransferException;
 import org.calik.clewa.wallet.exception.TransferConflictException;
@@ -33,8 +32,8 @@ public class TransferService {
 	// request body'sinden değil — bu metot bunu derleyici seviyesinde zorlamıyor, çağıran (Faz 5'teki
 	// controller) bu invaryantı korumaktan sorumlu (security-reviewer, Faz 4 incelemesi).
 	@Transactional
-	public Transfer transfer(String senderPhoneNumber, String recipientPhoneNumber, String recipientAccountNumber,
-			BigDecimal amount, String idempotencyKey) {
+	public Transfer transfer(String senderPhoneNumber, String recipientAccountNumber, BigDecimal amount,
+			String idempotencyKey) {
 
 		Wallet senderWallet = walletService.getWalletForCurrentUser(senderPhoneNumber);
 
@@ -47,16 +46,21 @@ public class TransferService {
 			return existingTransfer.get();
 		}
 
-		validateExactlyOneRecipientIdentifierProvided(recipientPhoneNumber, recipientAccountNumber);
-
-		if (isSelfTransfer(senderPhoneNumber, senderWallet, recipientPhoneNumber, recipientAccountNumber)) {
+		// Alıcı cüzdanı DB'den çekmeden, doğrudan hesap numaralarını karşılaştırıyoruz: kendine transfer
+		// zaten reddedilecekse gereksiz bir sorgu yapmaya gerek yok.
+		if (recipientAccountNumber.equals(senderWallet.getAccountNumber())) {
 			throw new SelfTransferException("Kendi hesabınıza transfer yapamazsınız.");
 		}
 
-		Wallet receiverWallet = findRecipientWallet(recipientPhoneNumber, recipientAccountNumber);
+		Wallet receiverWallet = walletRepository.findByAccountNumber(recipientAccountNumber)
+				.orElseThrow(() -> new RecipientNotFoundException("Alıcı bulunamadı."));
 
 		validateAccountActive(senderWallet, "Hesabınız aktif olmadığı için transfer yapamazsınız.");
-		validateAccountActive(receiverWallet, "Alıcının hesabı aktif olmadığı için bu işlemi gerçekleştiremezsiniz.");
+		// Alıcının hesabı donuk/kapalıysa açıkça söylemek yerine "bulunamadı" diyoruz: aksi halde üçüncü bir
+		// kişinin hesap durumu göndericiye ifşa olur (security-reviewer, Faz 5 incelemesi).
+		if (receiverWallet.getUser().getStatus() != AccountStatus.ACTIVE) {
+			throw new RecipientNotFoundException("Alıcı bulunamadı.");
+		}
 
 		applyBalanceChangeInDeadlockSafeOrder(senderWallet, receiverWallet, amount);
 
@@ -75,36 +79,6 @@ public class TransferService {
 			throw new TransferConflictException(
 					"Bu işlem zaten işleniyor ya da işlendi, lütfen kısa süre sonra tekrar deneyin.");
 		}
-	}
-
-	private void validateExactlyOneRecipientIdentifierProvided(String recipientPhoneNumber,
-			String recipientAccountNumber) {
-		boolean hasPhoneNumber = recipientPhoneNumber != null;
-		boolean hasAccountNumber = recipientAccountNumber != null;
-		if (hasPhoneNumber == hasAccountNumber) {
-			throw new InvalidTransferRequestException(
-					"Alıcı telefon numarası veya hesap numarasından tam olarak biri belirtilmelidir.");
-		}
-	}
-
-	// Alıcı cüzdanı DB'den çekmeden, doğrudan gönderilen tanımlayıcıları karşılaştırarak kendine
-	// transfer kontrolü yapıyoruz — hem gereksiz bir sorguyu önlüyor hem de iki ayrı repository
-	// çağrısının (telefon/hesap no ile) aynı cüzdana denk gelip gelmediğini karşılaştırma karmaşasından
-	// kurtarıyor.
-	private boolean isSelfTransfer(String senderPhoneNumber, Wallet senderWallet, String recipientPhoneNumber,
-			String recipientAccountNumber) {
-		if (recipientPhoneNumber != null) {
-			return recipientPhoneNumber.equals(senderPhoneNumber);
-		}
-		return recipientAccountNumber.equals(senderWallet.getAccountNumber());
-	}
-
-	private Wallet findRecipientWallet(String recipientPhoneNumber, String recipientAccountNumber) {
-		Optional<Wallet> recipientWallet = recipientPhoneNumber != null
-				? walletRepository.findByUser_PhoneNumber(recipientPhoneNumber)
-				: walletRepository.findByAccountNumber(recipientAccountNumber);
-
-		return recipientWallet.orElseThrow(() -> new RecipientNotFoundException("Alıcı bulunamadı."));
 	}
 
 	private void validateAccountActive(Wallet wallet, String message) {

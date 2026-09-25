@@ -4,9 +4,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 import org.calik.clewa.common.response.ApiResponse;
 
@@ -23,6 +26,27 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<ApiResponse<Void>> handleValidationException(MethodArgumentNotValidException exception) {
 		String message = exception.getBindingResult().getAllErrors().get(0).getDefaultMessage();
 		ApiResponse<Void> body = ApiResponse.error("VALIDATION_ERROR", message);
+		return ResponseEntity.badRequest().body(body);
+	}
+
+	// Gövde dışındaki (ör. @RequestHeader) parametrelere konan doğrulama kuralları ihlal edilince fırlar.
+	@ExceptionHandler(HandlerMethodValidationException.class)
+	public ResponseEntity<ApiResponse<Void>> handleMethodValidationException(HandlerMethodValidationException exception) {
+		String message = exception.getAllErrors().get(0).getDefaultMessage();
+		ApiResponse<Void> body = ApiResponse.error("VALIDATION_ERROR", message);
+		return ResponseEntity.badRequest().body(body);
+	}
+
+	@ExceptionHandler(MissingRequestHeaderException.class)
+	public ResponseEntity<ApiResponse<Void>> handleMissingHeader(MissingRequestHeaderException exception) {
+		ApiResponse<Void> body = ApiResponse.error("VALIDATION_ERROR", exception.getHeaderName() + " başlığı zorunludur.");
+		return ResponseEntity.badRequest().body(body);
+	}
+
+	// İstek gövdesi okunamıyorsa (bozuk JSON, sayı yerine yazı vb.) bu istemci hatasıdır, 500 değil 400 dönmeli.
+	@ExceptionHandler(HttpMessageNotReadableException.class)
+	public ResponseEntity<ApiResponse<Void>> handleUnreadableBody(HttpMessageNotReadableException exception) {
+		ApiResponse<Void> body = ApiResponse.error("INVALID_REQUEST", "İstek gövdesi okunamadı veya geçersiz.");
 		return ResponseEntity.badRequest().body(body);
 	}
 

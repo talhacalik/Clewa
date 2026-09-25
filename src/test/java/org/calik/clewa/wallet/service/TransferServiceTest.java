@@ -20,7 +20,6 @@ import org.calik.clewa.auth.exception.AccountNotActiveException;
 import org.calik.clewa.wallet.entity.Transfer;
 import org.calik.clewa.wallet.entity.Wallet;
 import org.calik.clewa.wallet.exception.InsufficientBalanceException;
-import org.calik.clewa.wallet.exception.InvalidTransferRequestException;
 import org.calik.clewa.wallet.exception.RecipientNotFoundException;
 import org.calik.clewa.wallet.exception.SelfTransferException;
 import org.calik.clewa.wallet.exception.TransferConflictException;
@@ -44,6 +43,8 @@ class TransferServiceTest {
 
 	private static final String SENDER_PHONE = "+905321234567";
 	private static final String RECEIVER_PHONE = "+905339876543";
+	private static final String SENDER_ACCOUNT = "1111111111";
+	private static final String RECEIVER_ACCOUNT = "2222222222";
 	private static final String IDEMPOTENCY_KEY = "idempotency-key-1";
 
 	@Mock
@@ -74,31 +75,30 @@ class TransferServiceTest {
 
 	@Test
 	void transfer_whenIdempotencyKeyAlreadyUsedBySameSender_returnsExistingTransferWithoutReprocessing() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
 		Transfer existingTransfer = mock(Transfer.class);
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		when(transferRepository.findBySenderWalletAndIdempotencyKey(sender, IDEMPOTENCY_KEY))
 			.thenReturn(Optional.of(existingTransfer));
 
-		Transfer result = transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, null, new BigDecimal("30.00"),
+		Transfer result = transferService.transfer(SENDER_PHONE, RECEIVER_ACCOUNT, new BigDecimal("30.00"),
 				IDEMPOTENCY_KEY);
 
 		assertThat(result).isEqualTo(existingTransfer);
-		verify(walletRepository, never()).findByUser_PhoneNumber(anyString());
 		verify(walletRepository, never()).findByAccountNumber(anyString());
 		verify(transferRepository, never()).save(any());
 	}
 
 	@Test
-	void transfer_whenRecipientIdentifiedByPhoneNumber_movesBalanceAndSavesTransfer() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
-		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, "2222222222", "20.00");
+	void transfer_movesBalanceAndSavesTransfer() {
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
+		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		stubNoExistingTransfer(sender);
-		when(walletRepository.findByUser_PhoneNumber(RECEIVER_PHONE)).thenReturn(Optional.of(receiver));
+		when(walletRepository.findByAccountNumber(RECEIVER_ACCOUNT)).thenReturn(Optional.of(receiver));
 		when(transferRepository.save(any(Transfer.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		Transfer result = transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, null, new BigDecimal("30.00"),
+		Transfer result = transferService.transfer(SENDER_PHONE, RECEIVER_ACCOUNT, new BigDecimal("30.00"),
 				IDEMPOTENCY_KEY);
 
 		assertThat(sender.getBalance()).isEqualByComparingTo("70.00");
@@ -110,70 +110,13 @@ class TransferServiceTest {
 	}
 
 	@Test
-	void transfer_whenRecipientIdentifiedByAccountNumber_movesBalanceAndSavesTransfer() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
-		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, "2222222222", "20.00");
-		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
-		stubNoExistingTransfer(sender);
-		when(walletRepository.findByAccountNumber("2222222222")).thenReturn(Optional.of(receiver));
-		when(transferRepository.save(any(Transfer.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-		Transfer result = transferService.transfer(SENDER_PHONE, null, "2222222222", new BigDecimal("30.00"),
-				IDEMPOTENCY_KEY);
-
-		assertThat(sender.getBalance()).isEqualByComparingTo("70.00");
-		assertThat(receiver.getBalance()).isEqualByComparingTo("50.00");
-		assertThat(result.getReceiverWallet()).isEqualTo(receiver);
-	}
-
-	@Test
-	void transfer_whenNeitherRecipientIdentifierProvided_throwsInvalidTransferRequestException() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
-		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
-		stubNoExistingTransfer(sender);
-
-		assertThatThrownBy(
-				() -> transferService.transfer(SENDER_PHONE, null, null, new BigDecimal("30.00"), IDEMPOTENCY_KEY))
-			.isInstanceOf(InvalidTransferRequestException.class);
-
-		verify(transferRepository, never()).save(any());
-	}
-
-	@Test
-	void transfer_whenBothRecipientIdentifiersProvided_throwsInvalidTransferRequestException() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
-		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
-		stubNoExistingTransfer(sender);
-
-		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, "2222222222",
-				new BigDecimal("30.00"), IDEMPOTENCY_KEY))
-			.isInstanceOf(InvalidTransferRequestException.class);
-
-		verify(transferRepository, never()).save(any());
-	}
-
-	@Test
-	void transfer_whenRecipientPhoneNumberNotFound_throwsRecipientNotFoundException() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
-		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
-		stubNoExistingTransfer(sender);
-		when(walletRepository.findByUser_PhoneNumber(RECEIVER_PHONE)).thenReturn(Optional.empty());
-
-		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, null,
-				new BigDecimal("30.00"), IDEMPOTENCY_KEY))
-			.isInstanceOf(RecipientNotFoundException.class);
-
-		verify(transferRepository, never()).save(any());
-	}
-
-	@Test
 	void transfer_whenRecipientAccountNumberNotFound_throwsRecipientNotFoundException() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		stubNoExistingTransfer(sender);
 		when(walletRepository.findByAccountNumber("9999999999")).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, null, "9999999999", new BigDecimal("30.00"),
+		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, "9999999999", new BigDecimal("30.00"),
 				IDEMPOTENCY_KEY))
 			.isInstanceOf(RecipientNotFoundException.class);
 
@@ -181,12 +124,12 @@ class TransferServiceTest {
 	}
 
 	@Test
-	void transfer_whenRecipientIdentifiedByOwnAccountNumber_throwsSelfTransferExceptionWithoutQuerying() {
-		Wallet ownWallet = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
+	void transfer_whenRecipientIsOwnAccountNumber_throwsSelfTransferExceptionWithoutQuerying() {
+		Wallet ownWallet = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(ownWallet);
 		stubNoExistingTransfer(ownWallet);
 
-		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, null, "1111111111", new BigDecimal("30.00"),
+		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, SENDER_ACCOUNT, new BigDecimal("30.00"),
 				IDEMPOTENCY_KEY))
 			.isInstanceOf(SelfTransferException.class);
 
@@ -196,30 +139,15 @@ class TransferServiceTest {
 	}
 
 	@Test
-	void transfer_whenRecipientIdentifiedByOwnPhoneNumber_throwsSelfTransferExceptionWithoutQuerying() {
-		Wallet ownWallet = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
-		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(ownWallet);
-		stubNoExistingTransfer(ownWallet);
-
-		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, SENDER_PHONE, null, new BigDecimal("30.00"),
-				IDEMPOTENCY_KEY))
-			.isInstanceOf(SelfTransferException.class);
-
-		assertThat(ownWallet.getBalance()).isEqualByComparingTo("100.00");
-		verify(walletRepository, never()).findByUser_PhoneNumber(anyString());
-		verify(transferRepository, never()).save(any());
-	}
-
-	@Test
 	void transfer_whenSenderHasInsufficientBalance_throwsInsufficientBalanceException() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "10.00");
-		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, "2222222222", "20.00");
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "10.00");
+		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		stubNoExistingTransfer(sender);
-		when(walletRepository.findByUser_PhoneNumber(RECEIVER_PHONE)).thenReturn(Optional.of(receiver));
+		when(walletRepository.findByAccountNumber(RECEIVER_ACCOUNT)).thenReturn(Optional.of(receiver));
 
-		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, null,
-				new BigDecimal("30.00"), IDEMPOTENCY_KEY))
+		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_ACCOUNT, new BigDecimal("30.00"),
+				IDEMPOTENCY_KEY))
 			.isInstanceOf(InsufficientBalanceException.class);
 
 		assertThat(receiver.getBalance()).isEqualByComparingTo("20.00");
@@ -228,15 +156,15 @@ class TransferServiceTest {
 
 	@Test
 	void transfer_whenSenderAccountNotActive_throwsAccountNotActiveExceptionWithoutMovingBalance() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
 		sender.getUser().setStatus(AccountStatus.FROZEN);
-		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, "2222222222", "20.00");
+		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		stubNoExistingTransfer(sender);
-		when(walletRepository.findByUser_PhoneNumber(RECEIVER_PHONE)).thenReturn(Optional.of(receiver));
+		when(walletRepository.findByAccountNumber(RECEIVER_ACCOUNT)).thenReturn(Optional.of(receiver));
 
-		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, null,
-				new BigDecimal("30.00"), IDEMPOTENCY_KEY))
+		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_ACCOUNT, new BigDecimal("30.00"),
+				IDEMPOTENCY_KEY))
 			.isInstanceOf(AccountNotActiveException.class);
 
 		assertThat(sender.getBalance()).isEqualByComparingTo("100.00");
@@ -245,17 +173,17 @@ class TransferServiceTest {
 	}
 
 	@Test
-	void transfer_whenReceiverAccountNotActive_throwsAccountNotActiveExceptionWithoutMovingBalance() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
-		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, "2222222222", "20.00");
+	void transfer_whenReceiverAccountNotActive_throwsRecipientNotFoundWithoutRevealingStatus() {
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
+		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
 		receiver.getUser().setStatus(AccountStatus.CLOSED);
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		stubNoExistingTransfer(sender);
-		when(walletRepository.findByUser_PhoneNumber(RECEIVER_PHONE)).thenReturn(Optional.of(receiver));
+		when(walletRepository.findByAccountNumber(RECEIVER_ACCOUNT)).thenReturn(Optional.of(receiver));
 
-		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, null,
-				new BigDecimal("30.00"), IDEMPOTENCY_KEY))
-			.isInstanceOf(AccountNotActiveException.class);
+		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_ACCOUNT, new BigDecimal("30.00"),
+				IDEMPOTENCY_KEY))
+			.isInstanceOf(RecipientNotFoundException.class);
 
 		assertThat(sender.getBalance()).isEqualByComparingTo("100.00");
 		assertThat(receiver.getBalance()).isEqualByComparingTo("20.00");
@@ -264,15 +192,15 @@ class TransferServiceTest {
 
 	@Test
 	void transfer_whenOptimisticLockConflictOccurs_throwsTransferConflictException() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
-		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, "2222222222", "20.00");
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
+		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		stubNoExistingTransfer(sender);
-		when(walletRepository.findByUser_PhoneNumber(RECEIVER_PHONE)).thenReturn(Optional.of(receiver));
+		when(walletRepository.findByAccountNumber(RECEIVER_ACCOUNT)).thenReturn(Optional.of(receiver));
 		doThrow(new ObjectOptimisticLockingFailureException(Wallet.class, 1L)).when(walletRepository).flush();
 
-		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, null,
-				new BigDecimal("30.00"), IDEMPOTENCY_KEY))
+		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_ACCOUNT, new BigDecimal("30.00"),
+				IDEMPOTENCY_KEY))
 			.isInstanceOf(TransferConflictException.class);
 
 		verify(transferRepository, never()).save(any());
@@ -280,26 +208,26 @@ class TransferServiceTest {
 
 	@Test
 	void transfer_whenSaveHitsDuplicateIdempotencyKeyRace_throwsTransferConflictException() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
-		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, "2222222222", "20.00");
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
+		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		stubNoExistingTransfer(sender);
-		when(walletRepository.findByUser_PhoneNumber(RECEIVER_PHONE)).thenReturn(Optional.of(receiver));
+		when(walletRepository.findByAccountNumber(RECEIVER_ACCOUNT)).thenReturn(Optional.of(receiver));
 		when(transferRepository.save(any(Transfer.class)))
 			.thenThrow(new DataIntegrityViolationException("duplicate idempotency key"));
 
-		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, null,
-				new BigDecimal("30.00"), IDEMPOTENCY_KEY))
+		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_ACCOUNT, new BigDecimal("30.00"),
+				IDEMPOTENCY_KEY))
 			.isInstanceOf(TransferConflictException.class);
 	}
 
 	@Test
 	void transfer_whenSenderHasSmallerId_flushesSenderDebitBeforeReceiverCredit() {
-		Wallet sender = buildWallet(1L, SENDER_PHONE, "1111111111", "100.00");
-		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, "2222222222", "20.00");
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
+		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		stubNoExistingTransfer(sender);
-		when(walletRepository.findByUser_PhoneNumber(RECEIVER_PHONE)).thenReturn(Optional.of(receiver));
+		when(walletRepository.findByAccountNumber(RECEIVER_ACCOUNT)).thenReturn(Optional.of(receiver));
 		when(transferRepository.save(any(Transfer.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		List<BigDecimal> senderBalanceAtEachFlush = new ArrayList<>();
@@ -310,7 +238,7 @@ class TransferServiceTest {
 			return null;
 		}).when(walletRepository).flush();
 
-		transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, null, new BigDecimal("30.00"), IDEMPOTENCY_KEY);
+		transferService.transfer(SENDER_PHONE, RECEIVER_ACCOUNT, new BigDecimal("30.00"), IDEMPOTENCY_KEY);
 
 		// sender'ın id'si küçük: ilk flush'ta sender'ın bakiyesi zaten düşmüş, receiver'ınki henüz değişmemiş olmalı.
 		assertThat(senderBalanceAtEachFlush.get(0)).isEqualByComparingTo("70.00");
@@ -321,11 +249,11 @@ class TransferServiceTest {
 
 	@Test
 	void transfer_whenReceiverHasSmallerId_flushesReceiverCreditBeforeSenderDebit() {
-		Wallet sender = buildWallet(2L, SENDER_PHONE, "1111111111", "100.00");
-		Wallet receiver = buildWallet(1L, RECEIVER_PHONE, "2222222222", "20.00");
+		Wallet sender = buildWallet(2L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
+		Wallet receiver = buildWallet(1L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		stubNoExistingTransfer(sender);
-		when(walletRepository.findByUser_PhoneNumber(RECEIVER_PHONE)).thenReturn(Optional.of(receiver));
+		when(walletRepository.findByAccountNumber(RECEIVER_ACCOUNT)).thenReturn(Optional.of(receiver));
 		when(transferRepository.save(any(Transfer.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		List<BigDecimal> senderBalanceAtEachFlush = new ArrayList<>();
@@ -336,7 +264,7 @@ class TransferServiceTest {
 			return null;
 		}).when(walletRepository).flush();
 
-		transferService.transfer(SENDER_PHONE, RECEIVER_PHONE, null, new BigDecimal("30.00"), IDEMPOTENCY_KEY);
+		transferService.transfer(SENDER_PHONE, RECEIVER_ACCOUNT, new BigDecimal("30.00"), IDEMPOTENCY_KEY);
 
 		// receiver'ın id'si küçük: ilk flush'ta receiver'ın bakiyesi zaten artmış, sender'ınki henüz değişmemiş olmalı.
 		assertThat(receiverBalanceAtEachFlush.get(0)).isEqualByComparingTo("50.00");

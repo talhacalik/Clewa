@@ -49,6 +49,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class Transfer {
 
+	public static final int IDEMPOTENCY_KEY_MAX_LENGTH = 100;
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
@@ -69,7 +71,7 @@ public class Transfer {
 
 	// Client-üretimi bir tekrar-deneme anahtarı (bkz. CLAUDE.md §3.7); 100, tipik bir UUID'den
 	// (36 karakter) belirgin şekilde geniş bir pay bırakıyor.
-	@Column(name = "idempotency_key", nullable = false, updatable = false, length = 100)
+	@Column(name = "idempotency_key", nullable = false, updatable = false, length = IDEMPOTENCY_KEY_MAX_LENGTH)
 	private String idempotencyKey;
 
 	@CreatedDate

@@ -22,8 +22,7 @@ public class WalletExceptionHandler {
 		return buildResponse(exception, HttpStatus.NOT_FOUND);
 	}
 
-	@ExceptionHandler({ InsufficientBalanceException.class, SelfTransferException.class,
-			InvalidTransferRequestException.class })
+	@ExceptionHandler({ InsufficientBalanceException.class, SelfTransferException.class })
 	public ResponseEntity<ApiResponse<Void>> handleBadRequest(ClewaException exception) {
 		return buildResponse(exception, HttpStatus.BAD_REQUEST);
 	}
