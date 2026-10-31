@@ -1,5 +1,6 @@
 package org.calik.clewa.card.service;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -10,12 +11,15 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import org.calik.clewa.auth.entity.AccountStatus;
 import org.calik.clewa.auth.entity.User;
 import org.calik.clewa.auth.exception.AccountNotActiveException;
 import org.calik.clewa.card.entity.Card;
+import org.calik.clewa.card.entity.CardStatus;
 import org.calik.clewa.card.exception.CardAlreadyExistsException;
+import org.calik.clewa.card.exception.CardConflictException;
 import org.calik.clewa.card.exception.CardNotFoundException;
 import org.calik.clewa.card.repository.CardRepository;
 import org.calik.clewa.wallet.entity.Wallet;
@@ -25,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -133,6 +138,119 @@ class CardServiceTest {
 		when(cardRepository.save(any(Card.class))).thenThrow(new DataIntegrityViolationException("uk_cards_card_number"));
 
 		assertThatThrownBy(() -> cardService.createCard(PHONE)).isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	private Card cardOfUser() {
+		return new Card(buildWallet(), "1234567890123456");
+	}
+
+	@Test
+	void freezeCard_freezesEvenWhenAccountIsNotActive() {
+		Card card = cardOfUser();
+		card.getWallet().getUser().setStatus(AccountStatus.FROZEN);
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.of(card));
+
+		Card result = cardService.freezeCard(PHONE);
+
+		assertThat(result.getStatus()).isEqualTo(CardStatus.FROZEN);
+		verify(cardRepository).flush();
+	}
+
+	@Test
+	void unfreezeCard_activatesCard() {
+		Card card = cardOfUser();
+		card.freeze();
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.of(card));
+
+		Card result = cardService.unfreezeCard(PHONE);
+
+		assertThat(result.getStatus()).isEqualTo(CardStatus.ACTIVE);
+	}
+
+	@Test
+	void unfreezeCard_whenAccountNotActive_throwsAndKeepsCardFrozen() {
+		Card card = cardOfUser();
+		card.freeze();
+		card.getWallet().getUser().setStatus(AccountStatus.FROZEN);
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.of(card));
+
+		assertThatThrownBy(() -> cardService.unfreezeCard(PHONE)).isInstanceOf(AccountNotActiveException.class);
+
+		assertThat(card.getStatus()).isEqualTo(CardStatus.FROZEN);
+	}
+
+	@Test
+	void changeDailyLimit_updatesLimitOnly() {
+		Card card = cardOfUser();
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.of(card));
+
+		Card result = cardService.changeDailyLimit(PHONE, new BigDecimal("1000.00"));
+
+		assertThat(result.getDailyLimit()).isEqualByComparingTo("1000.00");
+		assertThat(result.getRemainingDailyLimit()).isEqualByComparingTo("500000.00");
+	}
+
+	@Test
+	void changeDailyLimit_whenAccountNotActive_throws() {
+		Card card = cardOfUser();
+		card.getWallet().getUser().setStatus(AccountStatus.CLOSED);
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.of(card));
+
+		assertThatThrownBy(() -> cardService.changeDailyLimit(PHONE, new BigDecimal("1000.00")))
+			.isInstanceOf(AccountNotActiveException.class);
+
+		assertThat(card.getDailyLimit()).isEqualByComparingTo("500000.00");
+	}
+
+	@Test
+	void freezeCard_whenUserHasNoCard_throwsCardNotFound() {
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> cardService.freezeCard(PHONE)).isInstanceOf(CardNotFoundException.class);
+	}
+
+	@Test
+	void freezeCard_whenConcurrentUpdateConflicts_throwsCardConflict() {
+		Card card = cardOfUser();
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.of(card));
+		doThrow(new ObjectOptimisticLockingFailureException(Card.class, 1L)).when(cardRepository).flush();
+
+		assertThatThrownBy(() -> cardService.freezeCard(PHONE)).isInstanceOf(CardConflictException.class);
+	}
+
+	@Test
+	void unfreezeCard_whenUserHasNoCard_throwsCardNotFound() {
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> cardService.unfreezeCard(PHONE)).isInstanceOf(CardNotFoundException.class);
+	}
+
+	@Test
+	void changeDailyLimit_whenUserHasNoCard_throwsCardNotFound() {
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> cardService.changeDailyLimit(PHONE, new BigDecimal("1000.00")))
+			.isInstanceOf(CardNotFoundException.class);
+	}
+
+	@Test
+	void unfreezeCard_whenConcurrentUpdateConflicts_throwsCardConflict() {
+		Card card = cardOfUser();
+		card.freeze();
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.of(card));
+		doThrow(new ObjectOptimisticLockingFailureException(Card.class, 1L)).when(cardRepository).flush();
+
+		assertThatThrownBy(() -> cardService.unfreezeCard(PHONE)).isInstanceOf(CardConflictException.class);
+	}
+
+	@Test
+	void changeDailyLimit_whenConcurrentUpdateConflicts_throwsCardConflict() {
+		Card card = cardOfUser();
+		when(cardRepository.findByWallet_User_PhoneNumber(PHONE)).thenReturn(Optional.of(card));
+		doThrow(new ObjectOptimisticLockingFailureException(Card.class, 1L)).when(cardRepository).flush();
+
+		assertThatThrownBy(() -> cardService.changeDailyLimit(PHONE, new BigDecimal("1000.00")))
+			.isInstanceOf(CardConflictException.class);
 	}
 
 	@Test

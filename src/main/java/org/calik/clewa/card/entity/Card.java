@@ -1,7 +1,9 @@
 package org.calik.clewa.card.entity;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.Objects;
 
 import org.hibernate.annotations.Check;
 import org.springframework.data.annotation.CreatedDate;
@@ -28,9 +30,9 @@ import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-// Sadece @Getter var, hiç setter yok: durum/limit değişiklikleri, ihtiyaç doğduğunda (Faz 3, Faz 5)
-// freeze()/changeDailyLimit()/spend() gibi iş kurallarını da içeren domain metotlarıyla yapılacak;
-// dışarıdan alanları doğrudan değiştirmeyi baştan kapatıyoruz (Wallet.credit/debit ile aynı gerekçe).
+// Sadece @Getter var, hiç setter yok: durum/limit değişiklikleri freeze()/unfreeze()/changeDailyLimit() gibi iş
+// kurallarını da içeren domain metotlarıyla yapılır (harcama için spend() Faz 5'te eklenecek); dışarıdan alanları
+// doğrudan değiştirmeyi baştan kapatıyoruz (Wallet.credit/debit ile aynı gerekçe).
 @Entity
 @Table(name = "cards", uniqueConstraints = {
 		@UniqueConstraint(name = "uk_cards_wallet_id", columnNames = "wallet_id"),
@@ -43,6 +45,12 @@ public class Card {
 	public static final int CARD_NUMBER_LENGTH = 16;
 
 	public static final BigDecimal DEFAULT_DAILY_LIMIT = new BigDecimal("500000.00");
+
+	// Kullanıcının belirleyebileceği en yüksek günlük limit; DTO'daki @DecimalMax ile aynı kaynaktan (String sabiti,
+	// çünkü anotasyon değerleri derleme zamanı sabiti olmalı). Üst sınır yoksa limit pratikte anlamsızlaşır
+	// (security-reviewer, Adım 4 Faz 3 incelemesi).
+	public static final String MAX_DAILY_LIMIT_VALUE = "10000000.00";
+	public static final BigDecimal MAX_DAILY_LIMIT = new BigDecimal(MAX_DAILY_LIMIT_VALUE);
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -95,6 +103,30 @@ public class Card {
 		this.cardNumber = cardNumber;
 		this.dailyLimit = DEFAULT_DAILY_LIMIT;
 		this.remainingDailyLimit = DEFAULT_DAILY_LIMIT;
+	}
+
+	public void freeze() {
+		this.status = CardStatus.FROZEN;
+	}
+
+	public void unfreeze() {
+		this.status = CardStatus.ACTIVE;
+	}
+
+	// Sadece dailyLimit değişir; bugün kalan limit (remainingDailyLimit) aynen kalır, yeni limit ertesi gün
+	// gece yarısı görevi remainingDailyLimit'i dailyLimit'e eşitleyince geçerli olur (bkz. CLAUDE.md §7.4).
+	public void changeDailyLimit(BigDecimal newLimit) {
+		Objects.requireNonNull(newLimit, "newLimit null olamaz");
+		if (newLimit.compareTo(BigDecimal.ZERO) <= 0) {
+			throw new IllegalArgumentException("Günlük limit sıfırdan büyük olmalı.");
+		}
+		if (newLimit.compareTo(MAX_DAILY_LIMIT) > 0) {
+			throw new IllegalArgumentException("Günlük limit izin verilen üst sınırı aşıyor.");
+		}
+		if (newLimit.stripTrailingZeros().scale() > 2) {
+			throw new IllegalArgumentException("Günlük limit en fazla 2 ondalık basamak içerebilir.");
+		}
+		this.dailyLimit = newLimit.setScale(2, RoundingMode.HALF_EVEN);
 	}
 
 }

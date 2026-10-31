@@ -21,7 +21,7 @@ public class CardExceptionHandler {
 		return buildResponse(exception, HttpStatus.NOT_FOUND);
 	}
 
-	@ExceptionHandler(CardAlreadyExistsException.class)
+	@ExceptionHandler({ CardAlreadyExistsException.class, CardConflictException.class })
 	public ResponseEntity<ApiResponse<Void>> handleConflict(ClewaException exception) {
 		return buildResponse(exception, HttpStatus.CONFLICT);
 	}
