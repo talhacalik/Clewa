@@ -15,10 +15,16 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.calik.clewa.auth.entity.User;
 import org.calik.clewa.auth.exception.AccountNotActiveException;
 import org.calik.clewa.card.entity.Card;
+import org.calik.clewa.card.entity.CardTransaction;
 import org.calik.clewa.card.exception.CardAlreadyExistsException;
 import org.calik.clewa.card.exception.CardConflictException;
+import org.calik.clewa.card.exception.CardNotActiveException;
 import org.calik.clewa.card.exception.CardNotFoundException;
+import org.calik.clewa.card.exception.DailyLimitExceededException;
 import org.calik.clewa.card.service.CardService;
+import org.calik.clewa.card.service.CardSpendingService;
+import org.calik.clewa.common.exception.IdempotencyKeyReuseException;
+import org.calik.clewa.wallet.exception.InsufficientBalanceException;
 import org.calik.clewa.common.config.SecurityConfig;
 import org.calik.clewa.wallet.entity.Wallet;
 
@@ -52,6 +58,9 @@ class CardControllerTest {
 
 	@MockitoBean
 	private CardService cardService;
+
+	@MockitoBean
+	private CardSpendingService cardSpendingService;
 
 	private Card buildCard() {
 		User user = new User();
@@ -260,6 +269,141 @@ class CardControllerTest {
 			.andExpect(status().isForbidden());
 
 		verify(cardService, never()).changeDailyLimit(anyString(), any(BigDecimal.class));
+	}
+
+	private static final String SPEND = ENDPOINT + "/spend";
+	private static final String SPEND_BODY = "{\"amount\":250.00,\"merchantName\":\"Migros\"}";
+
+	private CardTransaction buildTransaction() {
+		CardTransaction transaction = new CardTransaction(buildCard(), new BigDecimal("250.00"), "Migros", "k1");
+		org.springframework.test.util.ReflectionTestUtils.setField(transaction, "createdAt",
+				java.time.Instant.parse("2026-10-31T10:00:00Z"));
+		return transaction;
+	}
+
+	@Test
+	@WithMockUser(username = USERNAME)
+	void spend_returnsCreatedReceiptWithoutCardOrBalanceInfo() throws Exception {
+		when(cardSpendingService.spend(eq(USERNAME), eq(new BigDecimal("250.00")), eq("Migros"), eq("k1")))
+			.thenReturn(buildTransaction());
+
+		mockMvc.perform(post(SPEND).with(csrf())
+				.header("Idempotency-Key", "k1")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(SPEND_BODY))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.data.amount").value(250.00))
+			.andExpect(jsonPath("$.data.merchantName").value("Migros"))
+			.andExpect(jsonPath("$.data.createdAt").exists())
+			.andExpect(jsonPath("$.data.maskedCardNumber").doesNotExist())
+			.andExpect(content().string(not(containsString(FULL_NUMBER))));
+	}
+
+	@Test
+	@WithMockUser(username = USERNAME)
+	void spend_userComesFromSessionEvenIfBodyClaimsAnotherUser() throws Exception {
+		when(cardSpendingService.spend(eq(USERNAME), any(BigDecimal.class), anyString(), anyString()))
+			.thenReturn(buildTransaction());
+
+		mockMvc.perform(post(SPEND).with(csrf())
+				.header("Idempotency-Key", "k1")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"amount\":250.00,\"merchantName\":\"Migros\",\"phoneNumber\":\"+905000000000\","
+						+ "\"cardNumber\":\"9999999999999999\"}"))
+			.andExpect(status().isCreated());
+
+		verify(cardSpendingService).spend(eq(USERNAME), eq(new BigDecimal("250.00")), eq("Migros"), eq("k1"));
+	}
+
+	@Test
+	void spend_withoutAuthentication_isRejected() throws Exception {
+		mockMvc.perform(post(SPEND).with(csrf()).header("Idempotency-Key", "k1")
+				.contentType(MediaType.APPLICATION_JSON).content(SPEND_BODY))
+			.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	@WithMockUser(username = USERNAME)
+	void spend_withoutCsrfToken_isForbidden() throws Exception {
+		mockMvc.perform(post(SPEND).header("Idempotency-Key", "k1")
+				.contentType(MediaType.APPLICATION_JSON).content(SPEND_BODY))
+			.andExpect(status().isForbidden());
+
+		verify(cardSpendingService, never()).spend(anyString(), any(BigDecimal.class), anyString(), anyString());
+	}
+
+	@Test
+	@WithMockUser(username = USERNAME)
+	void spend_withoutIdempotencyKey_returnsBadRequest() throws Exception {
+		mockMvc.perform(post(SPEND).with(csrf())
+				.contentType(MediaType.APPLICATION_JSON).content(SPEND_BODY))
+			.andExpect(status().isBadRequest());
+
+		verify(cardSpendingService, never()).spend(anyString(), any(BigDecimal.class), anyString(), anyString());
+	}
+
+	@Test
+	@WithMockUser(username = USERNAME)
+	void spend_withTooLongIdempotencyKey_returnsBadRequest() throws Exception {
+		mockMvc.perform(post(SPEND).with(csrf()).header("Idempotency-Key", "k".repeat(101))
+				.contentType(MediaType.APPLICATION_JSON).content(SPEND_BODY))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.message").value("Idempotency-Key en fazla 100 karakter olabilir."));
+	}
+
+	@Test
+	@WithMockUser(username = USERNAME)
+	void spend_withInvalidAmounts_areRejectedBeforeReachingService() throws Exception {
+		for (String badAmount : new String[] { "-5", "0", "10.005", "1e10000000" }) {
+			mockMvc.perform(post(SPEND).with(csrf()).header("Idempotency-Key", "k1")
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("{\"amount\":" + badAmount + ",\"merchantName\":\"Migros\"}"))
+				.andExpect(status().isBadRequest());
+		}
+
+		verify(cardSpendingService, never()).spend(anyString(), any(BigDecimal.class), anyString(), anyString());
+	}
+
+	@Test
+	@WithMockUser(username = USERNAME)
+	void spend_withMissingOrBlankOrTooLongMerchant_returnsTurkishMessages() throws Exception {
+		mockMvc.perform(post(SPEND).with(csrf()).header("Idempotency-Key", "k1")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"amount\":10.00}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.message").value("İşyeri adı zorunludur."));
+
+		mockMvc.perform(post(SPEND).with(csrf()).header("Idempotency-Key", "k1")
+				.contentType(MediaType.APPLICATION_JSON).content("{\"amount\":10.00,\"merchantName\":\"   \"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.message").value("İşyeri adı zorunludur."));
+
+		mockMvc.perform(post(SPEND).with(csrf()).header("Idempotency-Key", "k1")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"amount\":10.00,\"merchantName\":\"" + "m".repeat(101) + "\"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.error.message").value("İşyeri adı en fazla 100 karakter olabilir."));
+	}
+
+	@Test
+	@WithMockUser(username = USERNAME)
+	void spend_mapsDomainErrorsToStatusCodes() throws Exception {
+		when(cardSpendingService.spend(anyString(), any(BigDecimal.class), anyString(), anyString()))
+			.thenThrow(new DailyLimitExceededException("Limit."))
+			.thenThrow(new CardNotActiveException("Donuk."))
+			.thenThrow(new InsufficientBalanceException("Yetersiz."))
+			.thenThrow(new CardNotFoundException("Yok."))
+			.thenThrow(new CardConflictException("Çakışma."))
+			.thenThrow(new IdempotencyKeyReuseException("Farklı harcama."));
+
+		int[] expectedStatuses = { 400, 403, 400, 404, 409, 409 };
+		String[] expectedCodes = { "DAILY_LIMIT_EXCEEDED", "CARD_NOT_ACTIVE", "INSUFFICIENT_BALANCE",
+				"CARD_NOT_FOUND", "CARD_CONFLICT", "IDEMPOTENCY_KEY_REUSED" };
+		for (int i = 0; i < expectedStatuses.length; i++) {
+			mockMvc.perform(post(SPEND).with(csrf()).header("Idempotency-Key", "k1")
+					.contentType(MediaType.APPLICATION_JSON).content(SPEND_BODY))
+				.andExpect(status().is(expectedStatuses[i]))
+				.andExpect(jsonPath("$.error.code").value(expectedCodes[i]));
+		}
 	}
 
 	@Test

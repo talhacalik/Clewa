@@ -7,6 +7,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import org.calik.clewa.auth.entity.User;
+import org.calik.clewa.card.exception.CardNotActiveException;
+import org.calik.clewa.card.exception.DailyLimitExceededException;
 import org.calik.clewa.wallet.entity.Wallet;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -107,6 +109,49 @@ class CardTest {
 
 		assertThat(card.getDailyLimit()).isEqualByComparingTo("1000.50");
 		assertThat(card.getDailyLimit().scale()).isEqualTo(2);
+	}
+
+	@Test
+	void spend_reducesOnlyRemainingDailyLimit() {
+		Card card = buildCard();
+
+		card.spend(new BigDecimal("100.50"));
+
+		assertThat(card.getRemainingDailyLimit()).isEqualByComparingTo("499899.50");
+		assertThat(card.getRemainingDailyLimit().scale()).isEqualTo(2);
+		assertThat(card.getDailyLimit()).isEqualByComparingTo("500000.00");
+	}
+
+	@Test
+	void spend_whenFrozen_throwsCardNotActive() {
+		Card card = buildCard();
+		card.freeze();
+
+		assertThatThrownBy(() -> card.spend(new BigDecimal("1.00")))
+			.isInstanceOf(CardNotActiveException.class);
+
+		assertThat(card.getRemainingDailyLimit()).isEqualByComparingTo("500000.00");
+	}
+
+	@Test
+	void spend_aboveRemainingLimit_throwsDailyLimitExceeded() {
+		Card card = buildCard();
+
+		assertThatThrownBy(() -> card.spend(new BigDecimal("500000.01")))
+			.isInstanceOf(DailyLimitExceededException.class);
+
+		assertThat(card.getRemainingDailyLimit()).isEqualByComparingTo("500000.00");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "0", "-1.00", "10.005" })
+	void spend_rejectsNonPositiveOrSubCentAmounts(String invalidAmount) {
+		Card card = buildCard();
+
+		assertThatThrownBy(() -> card.spend(new BigDecimal(invalidAmount)))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		assertThat(card.getRemainingDailyLimit()).isEqualByComparingTo("500000.00");
 	}
 
 	@Test

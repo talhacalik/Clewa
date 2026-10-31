@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import org.calik.clewa.auth.entity.AccountStatus;
 import org.calik.clewa.auth.exception.AccountNotActiveException;
+import org.calik.clewa.common.exception.IdempotencyKeyReuseException;
 import org.calik.clewa.wallet.entity.Transfer;
 import org.calik.clewa.wallet.entity.Wallet;
 import org.calik.clewa.wallet.exception.RecipientNotFoundException;
@@ -43,7 +44,14 @@ public class TransferService {
 		Optional<Transfer> existingTransfer =
 				transferRepository.findBySenderWalletAndIdempotencyKey(senderWallet, idempotencyKey);
 		if (existingTransfer.isPresent()) {
-			return existingTransfer.get();
+			Transfer previous = existingTransfer.get();
+			boolean sameRequest = previous.getAmount().compareTo(amount) == 0
+					&& previous.getReceiverWallet().getAccountNumber().equals(recipientAccountNumber);
+			if (!sameRequest) {
+				throw new IdempotencyKeyReuseException(
+						"Bu Idempotency-Key daha önce farklı bir transfer için kullanıldı.");
+			}
+			return previous;
 		}
 
 		// Alıcı cüzdanı DB'den çekmeden, doğrudan hesap numaralarını karşılaştırıyoruz: kendine transfer

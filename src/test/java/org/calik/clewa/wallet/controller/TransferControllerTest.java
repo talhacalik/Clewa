@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.calik.clewa.auth.entity.User;
 import org.calik.clewa.auth.exception.AccountNotActiveException;
 import org.calik.clewa.common.config.SecurityConfig;
+import org.calik.clewa.common.exception.IdempotencyKeyReuseException;
 import org.calik.clewa.wallet.entity.Transfer;
 import org.calik.clewa.wallet.entity.Wallet;
 import org.calik.clewa.wallet.exception.InsufficientBalanceException;
@@ -239,6 +240,20 @@ class TransferControllerTest {
 				.content(VALID_BODY))
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.error.code").value("TRANSFER_CONFLICT"));
+	}
+
+	@Test
+	@WithMockUser(username = USERNAME)
+	void transfer_whenIdempotencyKeyReusedWithDifferentRequest_returnsConflict() throws Exception {
+		when(transferService.transfer(anyString(), anyString(), any(BigDecimal.class), anyString()))
+			.thenThrow(new IdempotencyKeyReuseException("Farklı transfer."));
+
+		mockMvc.perform(post(ENDPOINT).with(csrf())
+				.header("Idempotency-Key", KEY)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(VALID_BODY))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.error.code").value("IDEMPOTENCY_KEY_REUSED"));
 	}
 
 	@Test

@@ -17,6 +17,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.calik.clewa.auth.entity.AccountStatus;
 import org.calik.clewa.auth.entity.User;
 import org.calik.clewa.auth.exception.AccountNotActiveException;
+import org.calik.clewa.common.exception.IdempotencyKeyReuseException;
 import org.calik.clewa.wallet.entity.Transfer;
 import org.calik.clewa.wallet.entity.Wallet;
 import org.calik.clewa.wallet.exception.InsufficientBalanceException;
@@ -76,7 +77,8 @@ class TransferServiceTest {
 	@Test
 	void transfer_whenIdempotencyKeyAlreadyUsedBySameSender_returnsExistingTransferWithoutReprocessing() {
 		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
-		Transfer existingTransfer = mock(Transfer.class);
+		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
+		Transfer existingTransfer = new Transfer(sender, receiver, new BigDecimal("30.00"), IDEMPOTENCY_KEY);
 		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
 		when(transferRepository.findBySenderWalletAndIdempotencyKey(sender, IDEMPOTENCY_KEY))
 			.thenReturn(Optional.of(existingTransfer));
@@ -87,6 +89,36 @@ class TransferServiceTest {
 		assertThat(result).isEqualTo(existingTransfer);
 		verify(walletRepository, never()).findByAccountNumber(anyString());
 		verify(transferRepository, never()).save(any());
+	}
+
+	@Test
+	void transfer_whenSameKeyReusedWithDifferentAmount_throwsIdempotencyKeyReuse() {
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
+		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
+		Transfer existingTransfer = new Transfer(sender, receiver, new BigDecimal("30.00"), IDEMPOTENCY_KEY);
+		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
+		when(transferRepository.findBySenderWalletAndIdempotencyKey(sender, IDEMPOTENCY_KEY))
+			.thenReturn(Optional.of(existingTransfer));
+
+		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, RECEIVER_ACCOUNT, new BigDecimal("31.00"),
+				IDEMPOTENCY_KEY))
+			.isInstanceOf(IdempotencyKeyReuseException.class);
+
+		verify(transferRepository, never()).save(any());
+	}
+
+	@Test
+	void transfer_whenSameKeyReusedWithDifferentRecipient_throwsIdempotencyKeyReuse() {
+		Wallet sender = buildWallet(1L, SENDER_PHONE, SENDER_ACCOUNT, "100.00");
+		Wallet receiver = buildWallet(2L, RECEIVER_PHONE, RECEIVER_ACCOUNT, "20.00");
+		Transfer existingTransfer = new Transfer(sender, receiver, new BigDecimal("30.00"), IDEMPOTENCY_KEY);
+		when(walletService.getWalletForCurrentUser(SENDER_PHONE)).thenReturn(sender);
+		when(transferRepository.findBySenderWalletAndIdempotencyKey(sender, IDEMPOTENCY_KEY))
+			.thenReturn(Optional.of(existingTransfer));
+
+		assertThatThrownBy(() -> transferService.transfer(SENDER_PHONE, "9999999999", new BigDecimal("30.00"),
+				IDEMPOTENCY_KEY))
+			.isInstanceOf(IdempotencyKeyReuseException.class);
 	}
 
 	@Test

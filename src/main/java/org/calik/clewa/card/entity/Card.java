@@ -10,6 +10,8 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import org.calik.clewa.card.exception.CardNotActiveException;
+import org.calik.clewa.card.exception.DailyLimitExceededException;
 import org.calik.clewa.wallet.entity.Wallet;
 
 import jakarta.persistence.Column;
@@ -31,7 +33,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 // Sadece @Getter var, hiç setter yok: durum/limit değişiklikleri freeze()/unfreeze()/changeDailyLimit() gibi iş
-// kurallarını da içeren domain metotlarıyla yapılır (harcama için spend() Faz 5'te eklenecek); dışarıdan alanları
+// kurallarını da içeren domain metotlarıyla yapılır (harcama için spend()); dışarıdan alanları
 // doğrudan değiştirmeyi baştan kapatıyoruz (Wallet.credit/debit ile aynı gerekçe).
 @Entity
 @Table(name = "cards", uniqueConstraints = {
@@ -111,6 +113,26 @@ public class Card {
 
 	public void unfreeze() {
 		this.status = CardStatus.ACTIVE;
+	}
+
+	// Harcama: kart aktif olmalı ve tutar bugün kalan limitten büyük olmamalı. Cüzdan bakiyesini düşmek bu metodun
+	// işi değil (çağıran, Wallet.debit ile birlikte tek transaction'da yapar). Kuruş altı tutarı sessizce
+	// yuvarlamak yerine reddeder (Wallet/Transfer'daki para üretme açığıyla aynı gerekçe).
+	public void spend(BigDecimal amount) {
+		Objects.requireNonNull(amount, "amount null olamaz");
+		if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+			throw new IllegalArgumentException("Harcama tutarı sıfırdan büyük olmalı.");
+		}
+		if (amount.stripTrailingZeros().scale() > 2) {
+			throw new IllegalArgumentException("Harcama tutarı en fazla 2 ondalık basamak içerebilir.");
+		}
+		if (status != CardStatus.ACTIVE) {
+			throw new CardNotActiveException("Kartınız aktif olmadığı için harcama yapılamıyor.");
+		}
+		if (amount.compareTo(remainingDailyLimit) > 0) {
+			throw new DailyLimitExceededException("Günlük harcama limitinizi aşıyorsunuz.");
+		}
+		this.remainingDailyLimit = remainingDailyLimit.subtract(amount).setScale(2, RoundingMode.HALF_EVEN);
 	}
 
 	// Sadece dailyLimit değişir; bugün kalan limit (remainingDailyLimit) aynen kalır, yeni limit ertesi gün

@@ -29,6 +29,12 @@ public class GlobalExceptionHandler {
 		return ResponseEntity.badRequest().body(body);
 	}
 
+	@ExceptionHandler(IdempotencyKeyReuseException.class)
+	public ResponseEntity<ApiResponse<Void>> handleIdempotencyKeyReuse(IdempotencyKeyReuseException exception) {
+		ApiResponse<Void> body = ApiResponse.error(exception.getErrorCode(), exception.getMessage());
+		return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+	}
+
 	// Gövde dışındaki (ör. @RequestHeader) parametrelere konan doğrulama kuralları ihlal edilince fırlar.
 	@ExceptionHandler(HandlerMethodValidationException.class)
 	public ResponseEntity<ApiResponse<Void>> handleMethodValidationException(HandlerMethodValidationException exception) {

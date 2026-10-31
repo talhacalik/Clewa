@@ -21,6 +21,16 @@ public class CardExceptionHandler {
 		return buildResponse(exception, HttpStatus.NOT_FOUND);
 	}
 
+	@ExceptionHandler(DailyLimitExceededException.class)
+	public ResponseEntity<ApiResponse<Void>> handleBadRequest(ClewaException exception) {
+		return buildResponse(exception, HttpStatus.BAD_REQUEST);
+	}
+
+	@ExceptionHandler(CardNotActiveException.class)
+	public ResponseEntity<ApiResponse<Void>> handleForbidden(ClewaException exception) {
+		return buildResponse(exception, HttpStatus.FORBIDDEN);
+	}
+
 	@ExceptionHandler({ CardAlreadyExistsException.class, CardConflictException.class })
 	public ResponseEntity<ApiResponse<Void>> handleConflict(ClewaException exception) {
 		return buildResponse(exception, HttpStatus.CONFLICT);
