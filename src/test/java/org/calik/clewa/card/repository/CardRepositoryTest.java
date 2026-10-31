@@ -155,6 +155,20 @@ class CardRepositoryTest extends AbstractIntegrationTest {
 	}
 
 	@Test
+	void finderMethods_findCardByWalletPhoneNumberAndReportExistence() {
+		Wallet wallet = persistedWallet("+905321234567", "1111111111");
+		Wallet walletWithoutCard = persistedWallet("+905339876543", "2222222222");
+		cardRepository.saveAndFlush(new Card(wallet, CARD_NUMBER));
+
+		assertThat(cardRepository.findByWallet_User_PhoneNumber("+905321234567")).isPresent();
+		assertThat(cardRepository.findByWallet_User_PhoneNumber("+905339876543")).isEmpty();
+		assertThat(cardRepository.existsByWallet(wallet)).isTrue();
+		assertThat(cardRepository.existsByWallet(walletWithoutCard)).isFalse();
+		assertThat(cardRepository.existsByCardNumber(CARD_NUMBER)).isTrue();
+		assertThat(cardRepository.existsByCardNumber("0000000000000000")).isFalse();
+	}
+
+	@Test
 	void databaseRejectsUnknownStatusValue() {
 		Wallet wallet = persistedWallet("+905321234567", "1111111111");
 		Card saved = cardRepository.saveAndFlush(new Card(wallet, CARD_NUMBER));
